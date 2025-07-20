@@ -1,0 +1,13 @@
+
+b1 bạn vào trang web nhấn f12
+b2 bạn vào tab network
+b3 bạn click vào 1 sự kiện bất kì
+b4 ở mục header bạn kéo xuống phần cookie rồi copy cookie, cookie có dạng Fe26.2**.......f4TZSpBw thường đứng sau dòng nuxt-session=Fe26.2**.......f4TZSpBw
+b5 bạn vào file Cookie.txt rồi ctr+a ctr+v là được
+b6 bạn vào file init.bat(chỉ làm duy nhất 1 lần đầu chạy, lần sau trực tiếp sang b7)
+b7 bạn nhấn vào file run_mongtutien.bat là oke
+
+lưu ý khi dùng sau khi khởi động tool 1 lúc sẽ bị logout và phải đăng nhập lại
+sau khi đăng nhập lại xuất hiện thông báo linh khí gián đoạn (bắt f5) reset trang thì không ấn vào tool sẽ chạy bình thường
+bổ sung thêm chức năng tự động chọn chức năng và bí cảnh khi khởi động tool 
+hãy lưu ý khi muốn đổi 
