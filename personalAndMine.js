@@ -139,87 +139,6 @@ class MongTuTienAPIClient {
         }
     }
 
-    async enterExplore(cookie, mapKey) {
-        const url = "https://mongtutien.online/api/explore/enter";
-        try {
-            const headers = {
-                ...this.baseHeaders,
-                "Cookie": `nuxt-session=${cookie}`
-            };
-            const payload = { key: mapKey };
-            const response = await axios.post(url, payload, { headers, responseType: 'json' });
-            const data = response.data;
-            if (response.status === 200 && data && data.state) {
-                const { state, logs } = data;
-                this.log(`Vào bí cảnh thành công, trừ linh thạch`, 'success');
-                if (Array.isArray(logs) && logs.length > 0) {
-                    logs.forEach(log => this.log(stripHtmlTags(log.text), 'custom'));
-                }
-                return state;
-            } else {
-                this.log(`Không thể vào bí cảnh: Status ${response.status}`, 'error');
-                this.log(`Response: ${JSON.stringify(data)}`, 'error');
-                return null;
-            }
-        } catch (error) {
-            this.log(`Lỗi khi vào bí cảnh: ${error.message}`, 'error');
-            return null;
-        }
-    }
-
-    async tickExplore(cookie, mapKey) {
-        const url = "https://mongtutien.online/api/explore/tick";
-        try {
-            const headers = {
-                ...this.baseHeaders,
-                "Cookie": `nuxt-session=${cookie}`,
-                "Accept": "*/*"
-            };
-            const response = await axios.get(url, { headers, responseType: 'json' });
-            const data = response.data;
-            if (response.status === 200 && data && data.state) {
-                const { logs, state } = data;
-                if (Array.isArray(logs) && logs.length > 0) {
-                    logs.forEach(log => this.log(stripHtmlTags(log.text), 'custom'));
-                }
-                return { logs, state };
-            } else {
-                this.log(`Không thể lấy sự kiện bí cảnh: Status ${response.status}`, 'error');
-                this.log(`Response: ${JSON.stringify(data)}`, 'error');
-                return null;
-            }
-        } catch (error) {
-            this.log(`Lỗi khi lấy sự kiện bí cảnh: ${error.message}`, 'error');
-            return null;
-        }
-    }
-
-    async tickCultivation(cookie) {
-        const url = "https://mongtutien.online/api/cultivation/tick";
-        try {
-            const headers = {
-                ...this.baseHeaders,
-                "Cookie": `nuxt-session=${cookie}`,
-                "Accept": "*/*"
-            };
-            const response = await axios.get(url, { headers, responseType: 'json' });
-            const data = response.data;
-            if (response.status === 200 && data && data.state) {
-                const { logs, state } = data;
-                if (Array.isArray(logs) && logs.length > 0) {
-                    logs.forEach(log => this.log(stripHtmlTags(log.text), 'custom'));
-                }
-                return { logs, state };
-            } else {
-                this.log(`Không thể lấy sự kiện tu luyện: Status ${response.status}`, 'error');
-                this.log(`Response: ${JSON.stringify(data)}`, 'error');
-                return null;
-            }
-        } catch (error) {
-            this.log(`Lỗi khi lấy sự kiện tu luyện: ${error.message}`, 'error');
-            return null;
-        }
-    }
 
     getCookieFromFile() {
         try {
@@ -1636,6 +1555,7 @@ async function mainMultiFeatureWS() {
         '2. Đánh boss cá nhân',
         '3. Đánh boss pet',
         '4. Đánh boss đạo lữ',
+        '5. Đánh tháp',
         '',
         'Nhập nhiều số, cách nhau bởi dấu phẩy (vd: 1,2,3):'
     ];
@@ -1653,13 +1573,15 @@ async function mainMultiFeatureWS() {
             heavenmine: choices.includes('1'),
             personalBoss: choices.includes('2'),
             petBoss: choices.includes('3'),
-            wifeBoss: choices.includes('4')
+            wifeBoss: choices.includes('4'),
+            tower: choices.includes('5')
         };
         const featuresMap = {
             '1': 'Thu thập mỏ',
             '2': 'Đánh boss cá nhân',
             '3': 'Đánh boss pet',
-            '4': 'Đánh boss đạo lữ'
+            '4': 'Đánh boss đạo lữ',
+            '5': 'Đánh tháp'
         };
         const selected = choices.map(c => featuresMap[c] || c).join(', ');
         console.log(prettyBox('ĐANG CHẠY', [selected], 'green'));
@@ -1669,6 +1591,7 @@ async function mainMultiFeatureWS() {
         if (features.personalBoss) client.registerHandler(new PersonalBossHandler());
         if (features.petBoss) client.registerHandler(new PetBossHandler());
         if (features.wifeBoss) client.registerHandler(new WifeBossHandler());
+        if (features.tower) client.registerHandler(new TowerHandler());
         await client.connect();
         process.on('SIGINT', () => {
             if (client.ws) client.ws.close();
@@ -1691,22 +1614,122 @@ if (require.main === module) {
                 });
             });
         }
-        // Tự động chọn tất cả các chức năng 1,2,3,4
+        // Tự động chọn tất cả các chức năng 1,2,3,4,5
         const features = {
             heavenmine: true,
             personalBoss: true,
             petBoss: true,
-            wifeBoss: true
+            wifeBoss: true,
+            tower: true
         };
         const client = new MultiFeatureWebSocketClient(cookie, features);
         client.registerHandler(new HeavenMineHandler());
         client.registerHandler(new PersonalBossHandler());
         client.registerHandler(new PetBossHandler());
         client.registerHandler(new WifeBossHandler());
+        client.registerHandler(new TowerHandler());
         await client.connect();
         process.on('SIGINT', () => {
             if (client.ws) client.ws.close();
             process.exit(0);
         });
     })();
+} 
+
+class TowerHandler {
+    constructor() {
+        this.client = null;
+        this.currentFloor = 1;
+        this.isChallenging = false;
+        this.infoInterval = null;
+        this.challengeTimeout = null;
+        this.errorCount = 0;
+    }
+    setClient(client) { this.client = client; }
+    onSessionReady() {
+        this.client.safeSend('tower:info', {});
+        this.client.safeSend('tower:ranking', {});
+        this.infoInterval = setInterval(() => {
+            this.client.safeSend('tower:info', {});
+            this.client.safeSend('tower:ranking', {});
+        }, 60000);
+    }
+    async handleMessage(data) {
+        // Xử lý lỗi xác thực
+        if (data.error && (data.error.includes('cookie') || data.error.includes('xác thực') || data.error.includes('401'))) {
+            this.errorCount++;
+            if (this.errorCount > 3) {
+                this.client.log('Lỗi xác thực quá nhiều lần, dừng chức năng tháp.', 'error');
+                if (this.infoInterval) clearInterval(this.infoInterval);
+                if (this.challengeTimeout) clearTimeout(this.challengeTimeout);
+                return;
+            }
+            this.client.log('Lỗi xác thực, đang lấy lại cookie...', 'warning');
+            const newCookie = await getCookieAutoShared && await getCookieAutoShared();
+            if (newCookie) {
+                this.client.cookie = newCookie;
+                this.errorCount = 0;
+                this.client.log('Đã lấy lại cookie mới, tiếp tục...', 'success');
+                this.client.safeSend('tower:info', {});
+            } else {
+                this.client.log('Không lấy lại được cookie mới.', 'error');
+            }
+            return;
+        }
+        if (data.type === 'tower:info' && data.payload && data.payload.floor) {
+            const floor = data.payload.floor;
+            const monster = data.payload.monster;
+            this.currentFloor = floor;
+            this.client.log(`[THÁP] Tầng ${floor} - Gặp ${monster ? monster.name : '???'}`,'info');
+            if (!this.isChallenging) {
+                this.challengeFloor(floor);
+            }
+        }
+        if (data.type === 'tower:ranking' && Array.isArray(data.payload)) {
+            this.client.log(`[THÁP] Top 10 xếp hạng tháp:`, 'info');
+            data.payload.slice(0, 10).forEach((item, idx) => {
+                this.client.log(`  #${idx+1}: ${item.name || 'Ẩn danh'} (Lv${item.level || '?'}, ${item.realm || '?'})`, 'info');
+            });
+        }
+        if (data.type === 'log' && Array.isArray(data.payload)) {
+            data.payload.filter(l => l.type === 'tower').forEach(l => {
+                const clean = this.cleanTowerLog(l.text);
+                if (clean) this.client.log(`[THÁP] ${clean}`, this.highlightType(clean));
+            });
+        }
+    }
+    challengeFloor(floor) {
+        this.isChallenging = true;
+        this.client.log(`[THÁP] Gửi lệnh khiêu chiến tầng ${floor}...`, 'attack');
+        this.client.safeSend('tower:challenge', { floor });
+        if (this.challengeTimeout) clearTimeout(this.challengeTimeout);
+        this.challengeTimeout = setTimeout(() => {
+            this.isChallenging = false;
+            this.client.safeSend('tower:info', {});
+        }, 15000); // 15s mỗi lần
+    }
+    // Lọc và làm đẹp log tháp
+    cleanTowerLog(html) {
+        if (!html) return '';
+        // Loại bỏ thẻ img, div, span, b, i, class, style, chỉ giữ text
+        let text = html
+            .replace(/<img[^>]*>/g, '')
+            .replace(/<div[^>]*>/g, '')
+            .replace(/<span[^>]*>/g, '')
+            .replace(/<b[^>]*>/g, '')
+            .replace(/<i[^>]*>/g, '')
+            .replace(/<[^>]+>/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        // Làm nổi bật các sự kiện quan trọng
+        text = text.replace(/(CHÍ MẠNG!|ĐÒN HIỂM!|Vượt tầng|thành công trấn áp|hấp thụ [\d,\.]+ sinh lực|hồi phục [\d,\.]+ điểm|cướp đoạt [\d,\.]+ sinh lực)/g, (m) => m.toUpperCase());
+        return text;
+    }
+    // Xác định loại log để đổi màu
+    highlightType(text) {
+        if (/CHÍ MẠNG|ĐÒN HIỂM|trấn áp|VƯỢT TẦNG|thành công/.test(text)) return 'success';
+        if (/hấp thụ|hồi phục|cướp đoạt/.test(text)) return 'reward';
+        if (/né tránh|tránh được|hóa giải|không gây sát thương|ra đòn hụt/.test(text)) return 'warning';
+        return 'info';
+    }
 } 
